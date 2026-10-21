@@ -12,7 +12,7 @@ expected/actual diff, and coverage tints.
 
 Debug (`d`, or Debug Test at Cursor) runs the test under rhun's debugger: Delve (`dlv`, in test
 mode on its package) for Go, lldb-dap on the test binary `cargo test --no-run` builds for Rust; the
-session's exit status becomes the result.
+session's exit status becomes the result, and Cancel stops the session.
 
 rhun starts `go` and `cargo` for it as you, in your project, during the test runs you start: the
 manifest asks for `tests = go cargo`, and the first run in a project asks you once.

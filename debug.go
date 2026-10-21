@@ -38,7 +38,7 @@ func (x *ext) sessionEnded(d rhunext.DebugEnded) {
 }
 
 // debugSession starts a session for the run and waits for its end, or for the run's Cancel
-// (then ok is false: the session goes on until the user stops it)
+// (then ok is false and the session is stopped; its debug-ended lands in the channel nobody reads)
 func (x *ext) debugSession(r rhunext.TestRun, name string, cfg rhunext.DebugConfig) (rhunext.DebugEnded, bool, error) {
 	st := x.runState(r.Run)
 	session, err := x.e.DebugStart(context.Background(), name, cfg)
@@ -61,9 +61,7 @@ func (x *ext) debugSession(r rhunext.TestRun, name string, cfg rhunext.DebugConf
 	case d := <-ch:
 		return d, true, nil
 	case <-st.cancel:
-		x.mu.Lock()
-		delete(x.waiting, session)
-		x.mu.Unlock()
+		_ = x.e.DebugStop(context.Background(), session) // a session already over answers ok too
 		return rhunext.DebugEnded{}, false, nil
 	}
 }
