@@ -100,3 +100,32 @@ func TestCargoJobs(t *testing.T) {
 		t.Fatalf("%+v", all)
 	}
 }
+
+func TestDebugHelpers(t *testing.T) {
+	out := []byte(`{"reason":"compiler-artifact","target":{"kind":["lib"],"name":"demo"},"profile":{"test":false},"executable":null}
+{"reason":"compiler-artifact","target":{"kind":["lib"],"name":"demo"},"profile":{"test":true},"executable":"/t/deps/demo-1"}
+{"reason":"compiler-artifact","target":{"kind":["test"],"name":"api"},"profile":{"test":true},"executable":"/t/deps/api-2"}
+{"reason":"build-finished","success":true}`)
+	if e := testExecutable(out, "lib"); e != "/t/deps/demo-1" {
+		t.Fatalf("lib: %q", e)
+	}
+	if e := testExecutable(out, "tests/api"); e != "/t/deps/api-2" {
+		t.Fatalf("api: %q", e)
+	}
+	if e := testExecutable(out, "bin"); e != "" {
+		t.Fatalf("bin: %q", e)
+	}
+	if n := debugName([]string{"go:example.com/demo/calc.TestAdd"}); n != "Debug TestAdd" {
+		t.Fatalf("%q", n)
+	}
+	if n := debugName([]string{"cargo:demo:lib:tests::adds", "cargo:demo:lib:tests::x"}); n != "Debug adds and 1 more" {
+		t.Fatalf("%q", n)
+	}
+	d := debugResults([]string{"a"}, rhunext.DebugEnded{Session: 1, Code: 101, HasCode: true}, true)
+	if len(d) != 1 || d[0].State != rhunext.TestFailed {
+		t.Fatalf("%+v", d)
+	}
+	if d := debugResults([]string{"a"}, rhunext.DebugEnded{}, false); len(d) != 0 {
+		t.Fatalf("cancelled: %+v", d)
+	}
+}

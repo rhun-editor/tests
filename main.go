@@ -7,6 +7,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,6 +28,9 @@ type adapter interface {
 	resolve(id string) ([]rhunext.TestItem, error)
 	// run runs the items (none: all of the adapter's) and reports them; it returns when done
 	run(x *ext, r rhunext.TestRun, ids []string, rep *rhunext.TestReporter) error
+	// debug debugs the items in one session of the extension's debugger; it returns when the
+	// session ended (or the run was cancelled)
+	debug(x *ext, r rhunext.TestRun, ids []string, rep *rhunext.TestReporter) error
 	// refresh: a file was saved: the ids of resolved items whose children may have changed
 	refresh(path string) []string
 }
@@ -39,17 +43,21 @@ type ext struct {
 	mu       sync.Mutex
 	runs     map[int64]*runState
 	paths    map[rhunext.Doc]string // open documents' files
+	// debug sessions: runs waiting for their session's end, and ends no run waits for yet
+	waiting map[int64]chan rhunext.DebugEnded
+	ended   map[int64]rhunext.DebugEnded
 }
 
 type runState struct {
 	mu        sync.Mutex
 	cancelled bool
+	cancel    chan struct{} // closed by the user's Cancel
 }
 
 func main() {
 	x := &ext{runs: map[int64]*runState{}}
 	x.adapters = []adapter{newGoAdapter(), newCargoAdapter()}
-	if err := rhunext.RunWith([]string{rhunext.FeatureTests}, x); err != nil && err.Error() != "EOF" {
+	if err := rhunext.RunWith([]string{rhunext.FeatureTests, rhunext.FeatureDebug}, x); err != nil && err.Error() != "EOF" {
 		fmt.Fprintln(os.Stderr, "tests:", err)
 	}
 }
@@ -63,6 +71,10 @@ func (x *ext) Run(e *rhunext.Ext, command string, doc rhunext.Doc) {}
 
 func (x *ext) Event(e *rhunext.Ext, ev rhunext.Event) {
 	if x.settings.Update(ev) {
+		return
+	}
+	if d, ok := rhunext.ParseDebugEnded(ev); ok {
+		x.sessionEnded(d)
 		return
 	}
 	if ev.Name == "saved" {
@@ -123,10 +135,10 @@ func (x *ext) ResolveTests(e *rhunext.Ext, parent string) ([]rhunext.TestItem, e
 
 // RunTests starts the run on a goroutine: each adapter runs its share of the items in turn
 func (x *ext) RunTests(e *rhunext.Ext, r rhunext.TestRun) error {
-	if r.Profile == "debug" {
-		return &rhunext.Error{Code: "refused", Text: "debugging tests needs rhun's debugger (not yet)"}
+	if r.Profile == "debug" && !e.Has(rhunext.FeatureDebug) {
+		return &rhunext.Error{Code: "refused", Text: "debugging tests needs a rhun with the debugger"}
 	}
-	st := &runState{}
+	st := &runState{cancel: make(chan struct{})}
 	x.mu.Lock()
 	x.runs[r.Run] = st
 	x.mu.Unlock()
@@ -145,9 +157,20 @@ func (x *ext) RunTests(e *rhunext.Ext, r rhunext.TestRun) error {
 			if st.isCancelled() {
 				break
 			}
-			if err := a.run(x, r, ids, rep); err != nil {
+			run := a.run
+			if r.Profile == "debug" {
+				run = a.debug
+			}
+			err := run(x, r, ids, rep)
+			if errors.Is(err, errNothing) {
+				continue
+			}
+			if err != nil {
 				rep.Add(rhunext.TestResult{State: rhunext.TestErrored, Duration: rhunext.NoDuration,
 					Messages: []rhunext.TestMessage{{Text: err.Error()}}})
+			}
+			if r.Profile == "debug" {
+				break // one session a run: the first adapter with items
 			}
 		}
 		rep.Close()
@@ -166,7 +189,10 @@ func (x *ext) CancelTests(e *rhunext.Ext, run int64) {
 	x.mu.Unlock()
 	if st != nil {
 		st.mu.Lock()
-		st.cancelled = true
+		if !st.cancelled {
+			st.cancelled = true
+			close(st.cancel)
+		}
 		st.mu.Unlock()
 	}
 }
@@ -183,7 +209,7 @@ func (x *ext) runState(run int64) *runState {
 	if s := x.runs[run]; s != nil {
 		return s
 	}
-	return &runState{}
+	return &runState{cancel: make(chan struct{})}
 }
 
 // flags is a setting's words

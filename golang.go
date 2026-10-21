@@ -242,10 +242,10 @@ func (g *goAdapter) refresh(path string) []string {
 
 // goJob is one go test command: in a module's folder, of packages, with a -run pattern
 type goJob struct {
-	mod      *goModule
-	pkgs     []string // ./... or ./rel
-	pattern  string   // -run, "" for all
-	bench    string   // -bench, "" for none
+	mod     *goModule
+	pkgs    []string // ./... or ./rel
+	pattern string   // -run, "" for all
+	bench   string   // -bench, "" for none
 }
 
 // jobs: what the ids ask for, one job per package (or module, or the whole module for nothing)

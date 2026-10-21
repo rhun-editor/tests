@@ -10,6 +10,10 @@ expected/actual diff, and coverage tints.
   functions. Runs are `cargo test`; coverage needs
   [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov).
 
+Debug (`d`, or Debug Test at Cursor) runs the test under rhun's debugger: Delve (`dlv`, in test
+mode on its package) for Go, lldb-dap on the test binary `cargo test --no-run` builds for Rust; the
+session's exit status becomes the result.
+
 rhun starts `go` and `cargo` for it as you, in your project, during the test runs you start: the
 manifest asks for `tests = go cargo`, and the first run in a project asks you once.
 
