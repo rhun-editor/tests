@@ -217,6 +217,14 @@ func (x *ext) flags(key string) []string {
 	return strings.Fields(x.settings.String(key, ""))
 }
 
+// wire is a path as rhun writes and expects it: forward slashes on Windows too (C:/w/a/a_test.go).
+// Every path the extension sends goes through it (items, messages, coverage, commands, debug
+// configurations); the paths rhun sends are used as given, and the paths kept inside are the
+// system's (filepath's).
+func wire(p string) string {
+	return filepath.ToSlash(p)
+}
+
 // walk lists the folders under root holding a file named name, not going into skipped folders,
 // in sorted order, at most limit
 func walk(root, name string, limit int) []string {

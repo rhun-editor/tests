@@ -64,7 +64,7 @@ func (g *goAdapter) roots(project string) []rhunext.TestItem {
 		mod := &goModule{path: string(m[2]), dir: dir}
 		g.modules[mod.path] = mod
 		items = append(items, rhunext.TestItem{ID: "gomod:" + mod.path, Label: "Go: " + mod.path,
-			Kind: rhunext.TestGroup, Lazy: true, Path: filepath.Join(dir, "go.mod")})
+			Kind: rhunext.TestGroup, Lazy: true, Path: wire(filepath.Join(dir, "go.mod"))})
 	}
 	return items
 }
@@ -174,7 +174,7 @@ func goTests(dir, imp string) ([]rhunext.TestItem, error) {
 			}
 			start, end := fset.Position(fn.Pos()), fset.Position(fn.End())
 			items = append(items, rhunext.TestItem{ID: "go:" + imp + "." + name, Label: name, Kind: rhunext.TestCase,
-				Path: f, Range: &rhunext.Range{Start: rhunext.Pos{Line: start.Line, Col: start.Column},
+				Path: wire(f), Range: &rhunext.Range{Start: rhunext.Pos{Line: start.Line, Col: start.Column},
 					End: rhunext.Pos{Line: end.Line, Col: end.Column}}, Desc: desc, NoDebug: kind == "example"})
 		}
 	}
@@ -432,7 +432,7 @@ func (g *goAdapter) run(x *ext, r rhunext.TestRun, ids []string, rep *rhunext.Te
 		}
 		args = append(args, x.flags("go_flags")...)
 		args = append(args, j.pkgs...)
-		p, err := x.e.TestExec(r.Run, rhunext.TestCommand{Program: "go", Dir: j.mod.dir, Args: args})
+		p, err := x.e.TestExec(r.Run, rhunext.TestCommand{Program: "go", Dir: wire(j.mod.dir), Args: args})
 		if err != nil {
 			return fmt.Errorf("go test: %v", err)
 		}
@@ -605,7 +605,7 @@ func (g *goAdapter) messageLine(t *goTest, out, pkg string) {
 		n, _ := strconv.Atoi(m[2])
 		msg := rhunext.TestMessage{Text: m[3]}
 		if dir != "" && n > 0 {
-			msg.Path = filepath.Join(dir, m[1])
+			msg.Path = wire(filepath.Join(dir, m[1]))
 			msg.Range = &rhunext.Range{Start: rhunext.Pos{Line: n, Col: 1}, End: rhunext.Pos{Line: n, Col: 1}}
 		}
 		t.messages = append(t.messages, msg)
@@ -644,7 +644,7 @@ func buildMessages(out, dir string) []rhunext.TestMessage {
 		if !filepath.IsAbs(p) {
 			p = filepath.Join(dir, p)
 		}
-		msgs = append(msgs, rhunext.TestMessage{Text: m[4], Path: p,
+		msgs = append(msgs, rhunext.TestMessage{Text: m[4], Path: wire(p),
 			Range: &rhunext.Range{Start: rhunext.Pos{Line: l, Col: c}, End: rhunext.Pos{Line: l, Col: c}}})
 		if len(msgs) == 16 {
 			break
@@ -696,7 +696,7 @@ func goCoverage(path string, mods []*goModule) ([]rhunext.FileCoverage, error) {
 		}
 		fc := byFile[file]
 		if fc == nil {
-			fc = &rhunext.FileCoverage{Path: file}
+			fc = &rhunext.FileCoverage{Path: wire(file)}
 			byFile[file] = fc
 			order = append(order, file)
 		}

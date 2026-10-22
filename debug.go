@@ -117,8 +117,8 @@ func (g *goAdapter) debug(x *ext, r rhunext.TestRun, ids []string, rep *rhunext.
 	cfg.Set("type", rhunext.DebugStr("go-test"))
 	cfg.Set("request", rhunext.DebugStr("launch"))
 	cfg.Set("mode", rhunext.DebugStr("test"))
-	cfg.Set("program", rhunext.DebugStr(dir))
-	cfg.Set("cwd", rhunext.DebugStr(dir))
+	cfg.Set("program", rhunext.DebugStr(wire(dir)))
+	cfg.Set("cwd", rhunext.DebugStr(wire(dir)))
 	args := []string{"-test.v"}
 	switch {
 	case job.bench != "":
@@ -159,7 +159,7 @@ func (c *cargoAdapter) debug(x *ext, r rhunext.TestRun, ids []string, rep *rhune
 	args := []string{"test", "--no-run", "--message-format=json", "-p", j.pkg.name}
 	args = append(args, cargoTargetArgs(j.target)...)
 	args = append(args, x.flags("cargo_flags")...)
-	p, err := x.e.TestExec(r.Run, rhunext.TestCommand{Program: "cargo", Dir: j.pkg.dir, Args: args})
+	p, err := x.e.TestExec(r.Run, rhunext.TestCommand{Program: "cargo", Dir: wire(j.pkg.dir), Args: args})
 	if err != nil {
 		return fmt.Errorf("cargo test --no-run: %v", err)
 	}
@@ -177,8 +177,8 @@ func (c *cargoAdapter) debug(x *ext, r rhunext.TestRun, ids []string, rep *rhune
 	var cfg rhunext.DebugConfig
 	cfg.Set("type", rhunext.DebugStr("rust-test"))
 	cfg.Set("request", rhunext.DebugStr("launch"))
-	cfg.Set("program", rhunext.DebugStr(exe))
-	cfg.Set("cwd", rhunext.DebugStr(j.pkg.dir))
+	cfg.Set("program", rhunext.DebugStr(wire(exe)))
+	cfg.Set("cwd", rhunext.DebugStr(wire(j.pkg.dir)))
 	targs := []string{"--nocapture", "--test-threads=1"}
 	if len(j.tests) > 0 {
 		targs = append(targs, "--exact", "--include-ignored")

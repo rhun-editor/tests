@@ -64,7 +64,7 @@ func (c *cargoAdapter) roots(project string) []rhunext.TestItem {
 		p := &cargoPkg{name: m[1], dir: dir}
 		c.pkgs[p.name] = p
 		items = append(items, rhunext.TestItem{ID: "cargo:" + p.name, Label: "Cargo: " + p.name, Kind: rhunext.TestGroup,
-			Lazy: true, Path: filepath.Join(dir, "Cargo.toml")})
+			Lazy: true, Path: wire(filepath.Join(dir, "Cargo.toml"))})
 	}
 	return items
 }
@@ -131,7 +131,7 @@ func (c *cargoAdapter) resolve(id string) ([]rhunext.TestItem, error) {
 			if _, err := os.Stat(root); err == nil && len(rustTests(p, t, root, files)) > 0 {
 				label := map[string]string{"lib": "lib", "bin": "bin"}[t]
 				items = append(items, rhunext.TestItem{ID: "cargo:" + p.name + ":" + t, Label: label,
-					Kind: rhunext.TestGroup, Lazy: true, Path: root})
+					Kind: rhunext.TestGroup, Lazy: true, Path: wire(root)})
 			}
 		}
 		tests, _ := filepath.Glob(filepath.Join(p.dir, "tests", "*.rs"))
@@ -139,7 +139,7 @@ func (c *cargoAdapter) resolve(id string) ([]rhunext.TestItem, error) {
 		for _, f := range tests {
 			name := strings.TrimSuffix(filepath.Base(f), ".rs")
 			items = append(items, rhunext.TestItem{ID: "cargo:" + p.name + ":tests/" + name, Label: "tests/" + name,
-				Kind: rhunext.TestFile, Lazy: true, Path: f})
+				Kind: rhunext.TestFile, Lazy: true, Path: wire(f)})
 		}
 		return items, nil
 	}
@@ -208,7 +208,7 @@ func rustTests(p *cargoPkg, target, root string, files []string) []rhunext.TestI
 						endCol = len(line) + 1
 					}
 					it := rhunext.TestItem{ID: "cargo:" + p.name + ":" + target + ":" + full, Label: full,
-						Kind: rhunext.TestCase, Path: f,
+						Kind: rhunext.TestCase, Path: wire(f),
 						Range: &rhunext.Range{Start: rhunext.Pos{Line: i + 1, Col: indent + 1}, End: rhunext.Pos{Line: end, Col: endCol}}}
 					if ignored {
 						it.Desc = "ignored"
@@ -246,6 +246,7 @@ func (c *cargoAdapter) refresh(path string) []string {
 	if !strings.HasSuffix(path, ".rs") {
 		return nil
 	}
+	path = filepath.Clean(path) // rhun's C:/w/x/src/lib.rs is C:\w\x\src\lib.rs like the package folders
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var out []string
@@ -350,7 +351,7 @@ func (c *cargoAdapter) publish(j cargoJob, rep *rhunext.TestReporter) {
 	if strings.HasPrefix(j.target, "tests/") {
 		kind = rhunext.TestFile
 	}
-	rep.AddItems("cargo:"+j.pkg.name, rhunext.TestItem{ID: id, Label: j.target, Kind: kind, Path: root})
+	rep.AddItems("cargo:"+j.pkg.name, rhunext.TestItem{ID: id, Label: j.target, Kind: kind, Path: wire(root)})
 	if tests := rustTests(j.pkg, j.target, root, files); len(tests) > 0 {
 		rep.AddItems(id, tests...)
 	}
@@ -391,7 +392,7 @@ func (c *cargoAdapter) run(x *ext, r rhunext.TestRun, ids []string, rep *rhunext
 			args = append(args, "--", "--exact", "--include-ignored")
 			args = append(args, j.tests...)
 		}
-		p, err := x.e.TestExec(r.Run, rhunext.TestCommand{Program: "cargo", Dir: j.pkg.dir, Args: args})
+		p, err := x.e.TestExec(r.Run, rhunext.TestCommand{Program: "cargo", Dir: wire(j.pkg.dir), Args: args})
 		if err != nil {
 			return fmt.Errorf("cargo test: %v", err)
 		}
@@ -517,7 +518,7 @@ func panicMessages(text, dir string) []rhunext.TestMessage {
 		}
 		ln, _ := strconv.Atoi(m[2])
 		col, _ := strconv.Atoi(m[3])
-		msg := rhunext.TestMessage{Text: strings.Join(body, "\n"), Path: findFile(dir, m[1]),
+		msg := rhunext.TestMessage{Text: strings.Join(body, "\n"), Path: wire(findFile(dir, m[1])),
 			Range: &rhunext.Range{Start: rhunext.Pos{Line: ln, Col: col}, End: rhunext.Pos{Line: ln, Col: col}}}
 		if msg.Text == "" {
 			msg.Text = "panicked"
@@ -544,7 +545,7 @@ func compileMessages(stderr, dir string) []rhunext.TestMessage {
 			if m := reCompileLoc.FindStringSubmatch(lines[i+1]); m != nil {
 				ln, _ := strconv.Atoi(m[2])
 				col, _ := strconv.Atoi(m[3])
-				msg.Path = findFile(dir, m[1])
+				msg.Path = wire(findFile(dir, m[1]))
 				msg.Range = &rhunext.Range{Start: rhunext.Pos{Line: ln, Col: col}, End: rhunext.Pos{Line: ln, Col: col}}
 			}
 		}
@@ -592,7 +593,7 @@ func readLcov(path string) ([]rhunext.FileCoverage, error) {
 		line := sc.Text()
 		switch {
 		case strings.HasPrefix(line, "SF:"):
-			out = append(out, rhunext.FileCoverage{Path: strings.TrimPrefix(line, "SF:")})
+			out = append(out, rhunext.FileCoverage{Path: wire(strings.TrimPrefix(line, "SF:"))})
 			cur = &out[len(out)-1]
 		case strings.HasPrefix(line, "DA:") && cur != nil:
 			parts := strings.Split(strings.TrimPrefix(line, "DA:"), ",")

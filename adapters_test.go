@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -25,14 +26,15 @@ func TestGoTestsFromSources(t *testing.T) {
 	if got := strings.Join(names, " "); got != "TestA= BenchmarkB=benchmark ExampleC=example" {
 		t.Fatal(got)
 	}
-	if items[0].Range.Start != (rhunext.Pos{Line: 5, Col: 1}) || items[0].ID != "go:ex.com/a.TestA" {
+	if items[0].Range.Start != (rhunext.Pos{Line: 5, Col: 1}) || items[0].ID != "go:ex.com/a.TestA" ||
+		items[0].Path != filepath.ToSlash(filepath.Join(dir, "a_test.go")) { // as rhun writes paths
 		t.Fatal(items[0])
 	}
 }
 
 func TestGoMessagesAndValues(t *testing.T) {
 	g := newGoAdapter()
-	g.pkgDirs["ex.com/a"] = "/p/a"
+	g.pkgDirs["ex.com/a"] = filepath.FromSlash("/p/a") // the system's path, as filepath gives it
 	tt := &goTest{}
 	for _, l := range []string{"=== RUN   TestG\n", "    a_test.go:20: Greet mismatch\n", "        got:  \"Hello\"\n",
 		"        want: \"Hello!\\nWelcome.\"\n", "--- FAIL: TestG (0.00s)\n"} {
@@ -43,7 +45,7 @@ func TestGoMessagesAndValues(t *testing.T) {
 		*msgs[0].Expected != "Hello!\nWelcome." || *msgs[0].Actual != "Hello" {
 		t.Fatalf("%+v", msgs)
 	}
-	b := buildMessages("# ex.com/a\nbad/bad.go:3:23: undefined: x\n", "/m")
+	b := buildMessages("# ex.com/a\nbad/bad.go:3:23: undefined: x\n", filepath.FromSlash("/m"))
 	if len(b) != 1 || b[0].Path != "/m/bad/bad.go" || b[0].Range.Start != (rhunext.Pos{Line: 3, Col: 23}) {
 		t.Fatalf("%+v", b)
 	}
@@ -52,7 +54,7 @@ func TestGoMessagesAndValues(t *testing.T) {
 func TestGoCoverageProfile(t *testing.T) {
 	f := filepath.Join(t.TempDir(), "c.out")
 	os.WriteFile(f, []byte("mode: count\nex.com/m/calc/calc.go:3.24,4.11 1 2\nex.com/m/calc/calc.go:4.11,6.3 1 0\nother.com/x.go:1.1,2.2 1 1\n"), 0o644)
-	files, err := goCoverage(f, []*goModule{{path: "ex.com/m", dir: "/src/m"}})
+	files, err := goCoverage(f, []*goModule{{path: "ex.com/m", dir: filepath.FromSlash("/src/m")}})
 	if err != nil || len(files) != 1 || files[0].Path != "/src/m/calc/calc.go" || len(files[0].Ranges) != 2 ||
 		files[0].Ranges[1] != (rhunext.CoverageRange{From: 4, To: 6, Count: 0}) {
 		t.Fatalf("%+v %v", files, err)
@@ -78,8 +80,49 @@ func TestRustTestsAndPanics(t *testing.T) {
 		t.Fatal(items[0].Range, items[1].Range)
 	}
 	msgs := panicMessages("\nthread 't' panicked at src/lib.rs:16:9:\nassertion `left == right` failed: two\n  left: 4\n right: 5\nnote: run with\n", dir)
-	if len(msgs) != 1 || msgs[0].Range.Start != (rhunext.Pos{Line: 16, Col: 9}) || *msgs[0].Expected != "5" || *msgs[0].Actual != "4" {
+	if len(msgs) != 1 || msgs[0].Range.Start != (rhunext.Pos{Line: 16, Col: 9}) || *msgs[0].Expected != "5" || *msgs[0].Actual != "4" ||
+		msgs[0].Path != filepath.ToSlash(filepath.Join(dir, "src", "lib.rs")) {
 		t.Fatalf("%+v", msgs)
+	}
+	if items[0].Path != filepath.ToSlash(filepath.Join(dir, "src", "lib.rs")) || items[2].Path != filepath.ToSlash(filepath.Join(dir, "src", "net", "mod.rs")) {
+		t.Fatal(items[0].Path, items[2].Path)
+	}
+}
+
+// TestWindowsPathsAsRhunWritesThem: on Windows the extension's folders are C:\w\..., and what it
+// sends rhun says C:/w/... (rhun writes and matches paths with forward slashes there); a saved file
+// rhun names C:/w/x/src/lib.rs refreshes the package in C:\w\x
+func TestWindowsPathsAsRhunWritesThem(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("backslashes are separators on Windows only")
+	}
+	g := newGoAdapter()
+	g.pkgDirs["ex.com/a"] = `C:\w\a`
+	g.resolved["ex.com/a"] = true
+	tt := &goTest{}
+	g.messageLine(tt, "    a_test.go:20: Greet mismatch\n", "ex.com/a")
+	if msgs := finishMessages(tt); len(msgs) != 1 || msgs[0].Path != "C:/w/a/a_test.go" {
+		t.Fatalf("%+v", msgs)
+	}
+	if b := buildMessages("bad\\bad.go:3:23: undefined: x\n", `C:\w`); len(b) != 1 || b[0].Path != "C:/w/bad/bad.go" {
+		t.Fatalf("%+v", b)
+	}
+	f := filepath.Join(t.TempDir(), "c.out")
+	os.WriteFile(f, []byte("mode: count\nex.com/m/calc/calc.go:3.24,4.11 1 2\n"), 0o644)
+	if files, err := goCoverage(f, []*goModule{{path: "ex.com/m", dir: `C:\w\m`}}); err != nil || len(files) != 1 || files[0].Path != "C:/w/m/calc/calc.go" {
+		t.Fatalf("%+v %v", files, err)
+	}
+	if got := g.refresh("C:/w/a/a_test.go"); len(got) != 1 || got[0] != "go:ex.com/a" {
+		t.Fatal(got)
+	}
+	c := newCargoAdapter()
+	c.pkgs["x"] = &cargoPkg{name: "x", dir: `C:\w\x`}
+	c.resolved["cargo:x:lib"] = true
+	if got := c.refresh("C:/w/x/src/lib.rs"); len(got) != 1 || got[0] != "cargo:x:lib" {
+		t.Fatal(got)
+	}
+	if m := panicMessages("thread 't' panicked at src\\lib.rs:16:9:\nboom\n", `C:\w\x`); len(m) != 1 || m[0].Path != "C:/w/x/src/lib.rs" {
+		t.Fatalf("%+v", m)
 	}
 }
 
