@@ -1,0 +1,58 @@
+# A tag vX.Y.Z (equal to version in extension.ini) builds the extension for Linux, macOS and
+# Windows and publishes what rhun's Install from GitHub takes (https://rhun.app/extensions/v1/,
+# section 11): NAME-TARGET.tar.gz, the extension folder's contents at its top level, and
+# sha256sums.txt covering them.
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Tests
+        run: go vet ./... && go test ./...
+      - name: The tag is the manifest's version
+        run: test "${GITHUB_REF_NAME#v}" = "$(sed -n 's/^version *= *//p' extension.ini | head -1)"
+      - name: Build and pack
+        run: |
+          set -e
+          name=$(sed -n 's/^name *= *//p' extension.ini | head -1)
+          mkdir -p dist
+          # run.wasm32-wasip1 in the manifest: one WebAssembly module, in every archive
+          module=$(sed -n 's/^run\.wasm32-wasip1 *= *//p' extension.ini | head -1)
+          wasm="$RUNNER_TEMP/module.wasm"
+          if [ -n "$module" ]; then GOOS=wasip1 GOARCH=wasm go build -trimpath -ldflags=-s -o "$wasm" .; fi
+          for t in linux-x86_64:linux:amd64 macos-arm64:darwin:arm64 windows-x64:windows:amd64; do
+            target=${t%%:*}; rest=${t#*:}; goos=${rest%%:*}; goarch=${rest#*:}
+            exe=""; if [ "$goos" = windows ]; then exe=.exe; fi
+            stage=$(mktemp -d)
+            # the extension's files (tests/layout.sh: all but the source, tests and build files),
+            # then the program
+            sh tests/layout.sh "$stage"
+            mkdir -p "$stage/bin"
+            if grep -q "^run\.$target *=" extension.ini; then
+              CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -ldflags=-s -o "$stage/bin/$name-$target$exe" .
+            fi
+            if [ -n "$module" ]; then mkdir -p "$stage/$(dirname "$module")"; cp "$wasm" "$stage/$module"; fi
+            tar -czf "dist/$name-$target.tar.gz" -C "$stage" .
+          done
+          (cd dist && sha256sum *.tar.gz > sha256sums.txt)
+          cat dist/sha256sums.txt
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*.tar.gz
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" \
+            --notes "Install it in rhun: the extensions button in the title bar, then Install from GitHub, then ${GITHUB_REPOSITORY}."

@@ -14,7 +14,7 @@ trap 'rm -rf "$work"' EXIT
 dir=$work/exts/rhun-editor/tests
 mkdir -p "$dir/bin" "$work/proj/rs" "$work/config/rhun"
 CGO_ENABLED=0 go build -o "$dir/bin/tests-$target" .
-cp extension.ini "$dir/"
+sh tests/layout.sh "$dir"  # what the release ships: the manifest, README, LICENSE and the icon
 cp -R tests/fixtures/godemo/. "$work/proj/"
 cp -R tests/fixtures/rsdemo/. "$work/proj/rs/"
 printf '[files]\nrestore_session = false\nrestore_project = false\n[updates]\ncheck = false\n[git]\nenabled = false\n[ui]\nsidebar = false\nagents_panel = false\n[editor]\ncursor_blink = false\n' > "$work/config/rhun/config"
@@ -33,9 +33,11 @@ print-test-result tests go:example.com/demo/calc.TestGreet
 print-test-result tests cargo:demo:lib:tests::adds_wrong
 print-coverage $work/proj/calc/calc.go
 SCRIPT
-# rustup and cargo keep their toolchains under the real home
+# rustup and cargo keep their toolchains under the real home (read before HOME changes below)
+rustup_home=${RUSTUP_HOME:-$HOME/.rustup}
+cargo_home=${CARGO_HOME:-$HOME/.cargo}
 HOME=$work XDG_CONFIG_HOME=$work/config XDG_STATE_HOME=$work/state \
-    RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup} CARGO_HOME=${CARGO_HOME:-$HOME/.cargo} \
+    RUSTUP_HOME=$rustup_home CARGO_HOME=$cargo_home \
     "$RHUN" "$work/proj" --headless 1000x600 --scale 1 --extensions "$work/exts" --script "$work/script" \
     > "$work/out.txt" 2>&1
 fail=0
